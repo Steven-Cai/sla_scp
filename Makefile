@@ -1,17 +1,23 @@
-app_burn : main.o serial.o scp.o utiles.o
-	gcc -o app_burn main.o serial.o scp.o utiles.o
+CC = gcc
+# CC = ${CROSS_COMPILE}gcc
+
+TARGET = app_burn
+OBJS = main.o serial.o scp.o utiles.o
+
+$(TARGET) : $(OBJS)
+	$(CC) -o $(TARGET) $(OBJS)
 
 utiles.o : utiles.c
-	gcc -c utiles.c -o utiles.o
+	$(CC) -c utiles.c -o utiles.o
 
 scp.o : scp.c utiles.h
-	gcc -c scp.c -o scp.o
+	$(CC) -c scp.c -o scp.o
 
-serial.o : serial.c utiles.h
-	gcc -c serial.c -o serial.o
+serial.o : serial.c utiles.h serial.h
+	$(CC) -c serial.c -o serial.o
 
 main.o : main.c utiles.h
-	gcc -c main.c -o main.o
+	$(CC) -c main.c -o main.o
 
 clean :
-	rm app_burn *.o
+	rm $(TARGET) *.o
