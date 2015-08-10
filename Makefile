@@ -1,5 +1,5 @@
 CC = gcc
-# CC = ${CROSS_COMPILE}gcc
+#CC = ${CROSS_COMPILE}gcc
 
 TARGET = app_burn
 OBJS = main.o serial.o scp.o utiles.o

@@ -12,7 +12,7 @@ static int serial_set_options(int fd)
 {
 	struct termios options;
 
-	if (!tcgetattr(fd, &options)) {
+	if (tcgetattr(fd, &options)) {
 		print("%s - tcgetattr failed, errno = %d", __func__, errno);
 		return -1;
 	}
@@ -24,7 +24,10 @@ static int serial_set_options(int fd)
 	options.c_iflag |= IGNPAR; // no parity
 	options.c_oflag = 0; // output mode
 	options.c_lflag = 0; // disable terminal mode
-	cfsetospeed(&options, B115200);
+	if (cfsetospeed(&options, B115200) || cfsetispeed(&options, B115200)) {
+		print("%s - set baudrate failed, errno = %d", __func__, errno);
+		return -1;
+	}
 
 	tcflush(fd, TCOFLUSH);
 	tcsetattr(fd, TCSANOW, &options);
@@ -55,7 +58,7 @@ static int serial_open(const char *device_name)
 	return fd;
 }
 
-int serial_send(int fd, char *data, int data_len)
+int serial_send(int fd, void *data, int data_len)
 {
 	int len = 0;
 
@@ -69,23 +72,31 @@ int serial_send(int fd, char *data, int data_len)
 	}
 }
 
+/* return: */
+/* success: 0 */
+/* error: -1 */
+/* timeout: -2 */
 int serial_receive(int fd, char *data, int datalen)
 {
 	int len=0, ret = 0;
-	fd_set fs_read;
+	fd_set read_fds;
 	struct timeval tv_timeout;
 
-	FD_ZERO(&fs_read);
-	FD_SET(fd, &fs_read);
-	tv_timeout.tv_sec  = (10*20/115200+2);
+	FD_ZERO(&read_fds);
+	FD_SET(fd, &read_fds);
+	tv_timeout.tv_sec = SERIAL_TIME_OUT;
 	tv_timeout.tv_usec = 0;
 
-	ret = select(fd+1, &fs_read, NULL, NULL, &tv_timeout);
-	print("ret = %d\n", ret);
-	//如果返回0，代表在描述符状态改变前已超过timeout时间,错误返回-1
+	ret = select(fd + 1, &read_fds, NULL, NULL, &tv_timeout);
+	if (ret < 0) {
+		print("%s - select failed. errno = %d", __func__, errno);
+		return -1;
+	} else if (ret == 0) {
+		print("%s - select timeout", __func__);
+		return -2;
+	}
 
-
-	if (FD_ISSET(fd, &fs_read)) {
+	if (FD_ISSET(fd, &read_fds)) {
 		len = read(fd, data, datalen);
 		print("len = %d\n", len);
 		return len;
@@ -103,11 +114,15 @@ int serial_init(const char *device_name)
 	struct termios *option;
 
 	fd = serial_open(device_name);
-	if (fd < 0)
+	if (fd < 0) {
+		print("%s - serial_open failed", __func__);
 		return -1;
+	}
 	ret = serial_set_options(fd);
-	if (!ret)
+	if (ret) {
+		print("%s - serial_set_options failed", __func__);
 		return -1;
+	}
 	print("%s - success", __func__);
 
 	return fd;

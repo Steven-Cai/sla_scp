@@ -46,7 +46,3 @@ void print(const char *fmt, ...)
 	return;
 }
 
-int read_line(int fd, char *buffer, int len)
-{
-	
-}
