@@ -63,9 +63,10 @@ int serial_send(int fd, void *data, int data_len)
 	int len = 0;
 
 	len = write(fd, data, data_len);
-	if (len == data_len)
+	if (len == data_len) {
+		print("%s - send %d bytes", __func__, len);
 		return len;
-	else {
+	} else {
 		print("%s - send data error, len = %d, errno = %d", __func__, len, errno);
 		tcflush(fd, TCOFLUSH);
 		return -1;
@@ -73,7 +74,7 @@ int serial_send(int fd, void *data, int data_len)
 }
 
 /* return: */
-/* success: 0 */
+/* success: data_len */
 /* error: -1 */
 /* timeout: -2 */
 int serial_receive(int fd, char *data, int datalen)
@@ -98,7 +99,7 @@ int serial_receive(int fd, char *data, int datalen)
 
 	if (FD_ISSET(fd, &read_fds)) {
 		len = read(fd, data, datalen);
-		print("len = %d\n", len);
+		print("%s - len = %d, data = %s", __func__, len, data);
 		return len;
 	} else {
 		perror("select");
