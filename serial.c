@@ -71,6 +71,10 @@ int serial_send(int fd, void *data, int data_len)
 		tcflush(fd, TCOFLUSH);
 		return -1;
 	}
+	if (fsync(fd)) {
+		print("%s - fsync failed, errno = %d", __func__, errno);
+		return -1;
+	}
 }
 
 /* return: */
@@ -99,8 +103,13 @@ int serial_receive(int fd, char *data, int datalen)
 
 	if (FD_ISSET(fd, &read_fds)) {
 		len = read(fd, data, datalen);
-		print("%s - len = %d, data = %s", __func__, len, data);
-		return len;
+		if (len > 0) {
+			print("%s - len = %d, data = %s", __func__, len, data);
+			return len;
+		} else {
+			print("%s - read failed, errno = %d", __func__, errno);
+			return -1;
+		}
 	} else {
 		perror("select");
 		return -1;

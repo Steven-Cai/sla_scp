@@ -11,7 +11,7 @@
 
 #define SCP_PACKET_PATH_MAX_SIZE 1024
 #define SCP_PACKET_HOST_MAX_SIZE 4096
-#define SCP_PACKET_RECEIVE_MAX_SIZE 10240
+#define SCP_PACKET_BUF_MAX_SIZE 10240
 
 #define SCP_PACKET_LIST_NAME "packet.list"
 #define SCP_PACKET_BL_EMULATION_MODE "bl"
@@ -53,6 +53,7 @@ FILE *packet_list_open(const char *packet_dir)
 	char *packet_path = calloc(1, max_path_size);
 
 	packet_file_path_create(packet_dir, packet_list, packet_path, max_path_size);
+	print("%s - packet_path: %s", __func__, packet_path);
 	fp = fopen(packet_path, "r");
 	if (!fp) {
 		print("%s - fopen(%s) failed, errno = %d", __func__, packet_path, errno);
@@ -90,7 +91,7 @@ int scp_read_packet(const char *packet_path, void **buf, int *buf_len)
 
 	fd = open(packet_path, O_RDONLY);
 	if (fd < 0) {
-		print("%s - open packet path failed", __func__);
+		print("%s - open packet path failed, errno = %d", __func__, errno);
 		return -1;
 	}
 	len = lseek(fd, 0, SEEK_END);
@@ -136,6 +137,33 @@ void scp_parse_data(struct scp_cmd_hdr *scp_cmd_hdr, void *data)
 	printf("ctl = %d, dl = %d, id = %d, cks = %d\n", scp_cmd_hdr->ctl, scp_cmd_hdr->dl, scp_cmd_hdr->id, scp_cmd_hdr->cks);
 }
 
+int scp_packet_receive(int fd, char *buf, int expect_size)
+{
+	int ret, size = 0;
+	char *index = buf;
+
+	print("%s - expect_size = %d", __func__, expect_size);
+	while (size != expect_size) {
+		ret = serial_receive(fd, index, expect_size - size);
+		if (ret < 0) {
+			print("%s - serial_receive failed, return = %d", __func__, ret);
+			return ret;
+		}
+		size += ret;
+		if (size == expect_size) {
+			print("%s - read length = %d", __func__, size);
+			return size;
+		} else if (size < expect_size) {
+			index += size;
+		} else {
+			print("%s - Impossible is nothing", __func__);
+			return -1;
+		}
+	}
+
+	return size;
+}
+
 int scp_update(int serial_fd, const char *packet_dir)
 {
 	FILE *fp;
@@ -145,9 +173,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 	char packet_path[SCP_PACKET_PATH_MAX_SIZE];
 	int retry_times;
 	void *packet_buf = NULL;
-	void *packet_buf_pri = NULL;
-	char receive_buf[SCP_PACKET_RECEIVE_MAX_SIZE];
-	int buf_len, buf_len_pri;
+	void *packet_buf_pre = NULL;
+	char receive_buf[SCP_PACKET_BUF_MAX_SIZE];
+	int packet_len, packet_len_pre;
 	int ret = 0;
 	char *tmp;
 	int i;
@@ -162,13 +190,17 @@ int scp_update(int serial_fd, const char *packet_dir)
 
 	while ((len = getline(&packet_name, &size, fp)) != -1) {
 		packet_name[len - 1] = '\0'; //remove '\n'
-		//print("%s", packet_name);
-		packet_file_path_create(packet_dir, packet_name, packet_path, sizeof(packet_path));
+		printf("%s,  %s - %d, %d\n", packet_dir, packet_name, strlen(packet_dir), strlen(packet_name));
+		//packet_file_path_create(packet_dir, packet_name, packet_path, sizeof(packet_path));
+		snprintf(packet_path, sizeof(packet_path), "%s%s", packet_dir, packet_name);
+		printf("packet_path = %s", packet_path);
+		//printf("%s, size = %d\n\n", packet_path, strlen(packet_path));
 		retry_times = SCP_PACKET_READ_TIMES;
+		// read packet file form buildapp in the local directory
 		while (retry_times) {
 			retry_times --;
-			if (scp_read_packet(packet_path, &packet_buf, &buf_len)) {
-				print("%s - scp_read_packet(%s) failed, retry_times = %d", __func__, packet_name, retry_times);
+			if (scp_read_packet(packet_path, &packet_buf, &packet_len)) {
+				print("%s - scp_read_packet(%s) failed, retry_times = %d", __func__, packet_name, SCP_PACKET_READ_TIMES - retry_times);
 				continue;
 			} else {
 				break;
@@ -187,12 +219,21 @@ int scp_update(int serial_fd, const char *packet_dir)
 			retry_times = SCP_PACKET_SEND_RETRY_TIMES;
 			while (retry_times) {
 				retry_times --;
-				ret = serial_receive(serial_fd, receive_buf, sizeof(receive_buf));
+				// receive bl packet from MAX32550
+				ret = scp_packet_receive(serial_fd, receive_buf, packet_len);
 				if (ret == -2) {
-					if (serial_send(serial_fd, packet_buf_pri, buf_len_pri) != buf_len_pri)
-						print("%s - serial send packet(%s) failed", __func__, packet_name);
+					// receive timeout
+					if (serial_send(serial_fd, packet_buf_pre, packet_len_pre) != packet_len_pre)
+						print("%s - serial resend previous packet(%s) failed", __func__, packet_name);
 					continue;
-				} else if (ret == SCP_PACKET_CMD_SIZE) {
+				} else if (ret < 0) {
+					print("%s - scp_packet_receive error, ret = %d", __func__, ret);
+					free(packet_buf);
+					free(packet_buf_pre);
+					return -1;
+				}
+				if (ret == packet_len) { //ret == SCP_PACKET_CMD_SIZE) {
+					// print debug
 					tmp = receive_buf;
 					for (i = 0; i < 8; i ++) {
 						printf("%x  ", *(tmp ++));
@@ -202,7 +243,8 @@ int scp_update(int serial_fd, const char *packet_dir)
 					for (i = 0; i < 8; i ++)
 						printf("%x  ", *(tmp ++));
 					putchar('\n');
-					if (!memcmp(receive_buf, packet_buf, buf_len)) {
+					//
+					if (!memcmp(receive_buf, packet_buf, packet_len)) {
 						print("!!!!!!!!!!!!!!!!!!!!!!!!");
 						scp_parse_data(&cmd_hdr, receive_buf);
 						if (cmd_hdr.dl) {
@@ -214,8 +256,10 @@ int scp_update(int serial_fd, const char *packet_dir)
 						}
 						break;
 					}
-					else
+					else {
 						print("??????????????????");
+						break;
+					}
 				}
 			}
 		} else {
@@ -224,16 +268,17 @@ int scp_update(int serial_fd, const char *packet_dir)
 			retry_times = SCP_PACKET_SEND_RETRY_TIMES;
 			while (retry_times) {
 				retry_times --;
-				if (serial_send(serial_fd, packet_buf, buf_len) != buf_len) {
+				if (serial_send(serial_fd, packet_buf, packet_len) != packet_len) {
 					print("%s - serial send packet(%s) failed", __func__, packet_name);
 					continue;
 				}
-				if (packet_buf_pri)
-					free(packet_buf_pri);
-				packet_buf_pri = calloc(1, buf_len);
-				buf_len_pri = buf_len;
-				memcpy(packet_buf_pri, packet_buf, buf_len);
+				if (packet_buf_pre)
+					free(packet_buf_pre);
+				packet_buf_pre = calloc(1, packet_len);
+				packet_len_pre = packet_len;
+				memcpy(packet_buf_pre, packet_buf, packet_len);
 				print("%s - packet(%s) sends successed", __func__, packet_name);
+				print("************************************\n");
 				free(packet_buf);
 				break;
 			}
@@ -248,8 +293,8 @@ int scp_update(int serial_fd, const char *packet_dir)
 	packet_list_close(fp);
 	if (packet_name)
 		free(packet_name);
-	if (packet_buf_pri)
-		free(packet_buf_pri);
+	if (packet_buf_pre)
+		free(packet_buf_pre);
 
 	return ret;
 }
