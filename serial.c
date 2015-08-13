@@ -64,7 +64,7 @@ int serial_send(int fd, void *data, int data_len)
 
 	len = write(fd, data, data_len);
 	if (len == data_len) {
-		print("%s - send %d bytes", __func__, len);
+		//print("%s - send %d bytes", __func__, len);
 		return len;
 	} else {
 		print("%s - send data error, len = %d, errno = %d", __func__, len, errno);
@@ -104,7 +104,7 @@ int serial_receive(int fd, char *data, int datalen)
 	if (FD_ISSET(fd, &read_fds)) {
 		len = read(fd, data, datalen);
 		if (len > 0) {
-			print("%s - len = %d, data = %s", __func__, len, data);
+			//print("%s - len = %d, data = %s", __func__, len, data);
 			return len;
 		} else {
 			print("%s - read failed, errno = %d", __func__, errno);

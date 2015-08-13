@@ -72,6 +72,7 @@ int packet_list_read(int fd, char *buf)
 		return -1;
 }
 
+// *buf need to be free by manually
 int scp_read_packet(const char *packet_path, void **buf, int *buf_len)
 {
 	int fd, len, ret;
@@ -83,7 +84,7 @@ int scp_read_packet(const char *packet_path, void **buf, int *buf_len)
 		return -1;
 	}
 	len = lseek(fd, 0, SEEK_END);
-	print("%s - len = %d", __func__, len);
+	//print("%s - len = %d", __func__, len);
 	*buf = malloc(len);
 	if (!*buf) {
 		print("%s - malloc failed, errno = %d", __func__, errno);
@@ -103,7 +104,7 @@ int scp_read_packet(const char *packet_path, void **buf, int *buf_len)
 }
 
 // FMT: '>cccBHBB'
-void scp_parse_data(struct scp_cmd_hdr *scp_cmd_hdr, void *data)
+void scp_parse_cmd_hdr(struct scp_cmd_hdr *scp_cmd_hdr, void *data)
 {
 	unsigned int scp_cmd[2] = {0};
 	char *tmp = (char *)scp_cmd;
@@ -121,8 +122,8 @@ void scp_parse_data(struct scp_cmd_hdr *scp_cmd_hdr, void *data)
 	scp_cmd_hdr->id = (scp_cmd[1] & 0x00ffff00) >> 8;
 	scp_cmd_hdr->cks = (scp_cmd[1] & 0x000000ff);
 
-	printf("sync1 = 0x%2x, sync2 = 0x%2x, sync3 = 0x%2x\n", scp_cmd_hdr->sync1, scp_cmd_hdr->sync2, scp_cmd_hdr->sync3);
-	printf("ctl = %d, dl = %d, id = %d, cks = %d\n", scp_cmd_hdr->ctl, scp_cmd_hdr->dl, scp_cmd_hdr->id, scp_cmd_hdr->cks);
+	//printf("sync1 = 0x%2x, sync2 = 0x%2x, sync3 = 0x%2x\n", scp_cmd_hdr->sync1, scp_cmd_hdr->sync2, scp_cmd_hdr->sync3);
+	//printf("ctl = %d, dl = %d, id = %d, cks = %d\n", scp_cmd_hdr->ctl, scp_cmd_hdr->dl, scp_cmd_hdr->id, scp_cmd_hdr->cks);
 }
 
 int scp_packet_receive(int fd, char *buf, int expect_size)
@@ -130,7 +131,7 @@ int scp_packet_receive(int fd, char *buf, int expect_size)
 	int ret, size = 0;
 	char *index = buf;
 
-	print("%s - expect_size = %d", __func__, expect_size);
+	//print("%s - expect_size = %d", __func__, expect_size);
 	while (size != expect_size) {
 		ret = serial_receive(fd, index, expect_size - size);
 		if (ret < 0) {
@@ -139,7 +140,7 @@ int scp_packet_receive(int fd, char *buf, int expect_size)
 		}
 		size += ret;
 		if (size == expect_size) {
-			print("%s - read length = %d", __func__, size);
+			//print("%s - read length = %d", __func__, size);
 			return size;
 		} else if (size < expect_size) {
 			index += size;
@@ -158,21 +159,22 @@ int scp_update(int serial_fd, const char *packet_dir)
 	int list_fd;
 	int len, size;
 	char *packet_name = NULL;
-	char packet_path[SCP_PACKET_PATH_MAX_SIZE];
-	int retry_times;
 	void *packet_buf = NULL;
 	void *packet_buf_pre = NULL;
-	char receive_buf[SCP_PACKET_BUF_MAX_SIZE];
+	char packet_path[SCP_PACKET_PATH_MAX_SIZE];
+	char bl_buf[SCP_PACKET_BUF_MAX_SIZE];
 	int packet_len, packet_len_pre;
+	int retry_times;
 	int ret = 0;
 	char *tmp;
 	int i;
-	struct scp_cmd_hdr cmd_hdr;
+	struct scp_cmd_hdr bl_cmd_hdr;
+	struct scp_cmd_hdr packet_cmd_hdr;
 
 	print("Start SCP session");
 	fp = packet_list_open(packet_dir);
 	if (!fp) {
-		print("%s - open packet.list failed", __func__);
+		print("%s - open packet.list failed, giveup", __func__);
 		return -1;
 	}
 
@@ -180,7 +182,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 		// packet_name need to be free manually
 		packet_name[len - 1] = '\0'; //remove '\n'
 		snprintf(packet_path, sizeof(packet_path), "%s%s", packet_dir, packet_name);
-		retry_times = SCP_PACKET_READ_TIMES;
+		retry_times = SCP_PACKET_READ_TIMES; // 3
 		// read packet file form buildapp in the local directory
 		while (retry_times) {
 			retry_times --;
@@ -192,47 +194,64 @@ int scp_update(int serial_fd, const char *packet_dir)
 		if (retry_times == 0) {
 			print("%s - read packet %d times failed, giveup", __func__, SCP_PACKET_READ_TIMES);
 			ret = -1;
-			break;
+			goto error_1;;
 		}
 		// dispatch packet
 		if (strstr(packet_name, SCP_PACKET_BL_EMULATION_MODE)) {
-			// BL Emulation mode
+			// BL mode
 			print("wait < %s", packet_path);
-			memset((void *)&cmd_hdr, 0, sizeof(struct scp_cmd_hdr));
+			memset((void *)&bl_cmd_hdr, 0, sizeof(struct scp_cmd_hdr));
+			memset((void *)&packet_cmd_hdr, 0, sizeof(struct scp_cmd_hdr));
 			retry_times = SCP_PACKET_SEND_RETRY_TIMES;
 			while (retry_times) {
 				retry_times --;
 				// receive bl packet from MAX32550
-				ret = scp_packet_receive(serial_fd, receive_buf, packet_len);
+				ret = scp_packet_receive(serial_fd, bl_buf, packet_len);
 				if (ret == -2) {
 					// receive timeout
 					if (serial_send(serial_fd, packet_buf_pre, packet_len_pre) != packet_len_pre)
 						print("%s - serial resend previous packet(%s) failed", __func__, packet_name);
+					else
+						print("%s - serial resend previous packet(%s)", __func__, packet_name);
 					continue;
 				} else if (ret < 0) {
 					print("%s - scp_packet_receive error, ret = %d", __func__, ret);
-					free(packet_buf);
-					free(packet_buf_pre);
-					return -1;
+					ret = -1;
+					goto error_2;
 				}
-				if (ret == packet_len) { //ret == SCP_PACKET_CMD_SIZE) {
-					if (!memcmp(receive_buf, packet_buf, packet_len)) {
-						print("!!!!!!!!!!!!!!!!!!!!!!!!");
-						scp_parse_data(&cmd_hdr, receive_buf);
-						if (cmd_hdr.dl) {
+				if (ret == packet_len) {
+					scp_parse_cmd_hdr(&packet_cmd_hdr, packet_buf);
+					if (!memcmp(bl_buf, packet_buf, packet_len)) {
+						free(packet_buf);
+						packet_buf = NULL;
+						print("bl packet is the same as the packet from MAX32550\n");
+						break;
+					} else {
+						free(packet_buf);
+						packet_buf = NULL;
+						print("bl packet is different with the packet from MAX32550\n");
+						scp_parse_cmd_hdr(&bl_cmd_hdr, bl_buf);
+						if (bl_cmd_hdr.dl) {
 							//BootloaderScp.py: 178
-							ret = serial_receive(serial_fd, receive_buf, sizeof(receive_buf));
-							if (ret > 0) {
-								print("%s - cmd_hdr->dl  = %d, ret = %d\n", __func__, cmd_hdr.dl, ret);
-							}
+							ret = serial_receive(serial_fd, bl_buf, sizeof(bl_buf));
+							if (ret > 0)
+								print("%s - bl_cmd_hdr->dl  = %d, ret = %d\n", __func__, bl_cmd_hdr.dl, ret);
 						}
-						break;
-					}
-					else {
-						print("??????????????????");
-						break;
+						if (!memcmp(&packet_cmd_hdr, &bl_cmd_hdr, sizeof(struct scp_cmd_hdr))) {
+							print("packet_cmd_hdr and bl_cmd_hdr have the same cmd_hdr, although the data is different, PASS");
+							break;
+						} else {
+							print("%s - error bl packet, giveup", __func__);
+							ret = -1;
+							goto error_2;
+						}
 					}
 				}
+			}
+			if (retry_times == 0) {
+				print("%s - receive packet(%s) %d times failed", __func__, packet_name, SCP_PACKET_SEND_RETRY_TIMES);
+				ret = -1;
+				goto error_2;
 			}
 		} else {
 			// host mode
@@ -244,31 +263,36 @@ int scp_update(int serial_fd, const char *packet_dir)
 					print("%s - serial send packet(%s) failed", __func__, packet_name);
 					continue;
 				}
+				// serial_send success
 				if (packet_buf_pre)
 					free(packet_buf_pre);
 				packet_buf_pre = calloc(1, packet_len);
 				packet_len_pre = packet_len;
 				memcpy(packet_buf_pre, packet_buf, packet_len);
-				print("%s - packet(%s) sends successed", __func__, packet_name);
-				print("************************************\n");
 				free(packet_buf);
+				packet_buf = NULL;
+				print("%s - packet(%s) sends successed\n", __func__, packet_name);
 				break;
 			}
 			if (retry_times == 0) {
-				free(packet_buf);
+				print("%s - send packet(%s) %d times failed", __func__, packet_name, SCP_PACKET_SEND_RETRY_TIMES);
 				ret = -1;
-				break;
+				goto error_2;
 			}
 		}
 	}
+	print("SCP session success");
 
-	packet_list_close(fp);
-	if (packet_name)
-		free(packet_name);
+error_2:
+	if (packet_buf)
+		free(packet_buf);
 	if (packet_buf_pre)
 		free(packet_buf_pre);
+error_1:
+	if (packet_name)
+		free(packet_name);
+	packet_list_close(fp);
 
-	print("SCP session success");
 	return ret;
 }
 
@@ -281,7 +305,6 @@ int scp_burn(const char *device_name, const char *packet_dir)
 		print("%s - serial_init failed", __func__);
 		return -1;
 	}
-	scp_update(serial_fd, packet_dir);
 
-	return 0;
+	return scp_update(serial_fd, packet_dir);
 }
