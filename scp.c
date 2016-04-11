@@ -224,7 +224,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 					if (!memcmp(bl_buf, packet_buf, packet_len)) {
 						free(packet_buf);
 						packet_buf = NULL;
-						print("bl packet is the same as the packet from MAX32550\n");
+						print("bl packet is identical with the packet from MAX32550\n");
 						break;
 					} else {
 						free(packet_buf);

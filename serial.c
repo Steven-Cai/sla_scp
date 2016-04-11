@@ -16,13 +16,18 @@ static int serial_set_options(int fd)
 		print("%s - tcgetattr failed, errno = %d", __func__, errno);
 		return -1;
 	}
+	/* control flag */
 	options.c_cflag |= (CLOCAL | CREAD);
 	options.c_cflag &= ~CSIZE;
 	options.c_cflag &= ~CRTSCTS; // no hardware flow control
 	options.c_cflag |= CS8; // data size
 	options.c_cflag &= ~CSTOPB; // one stopbit
+	/* input flag */
+	options.c_iflag = 0;
 	options.c_iflag |= IGNPAR; // no parity
+	/* output flag */
 	options.c_oflag = 0; // output mode
+
 	options.c_lflag = 0; // disable terminal mode
 	if (cfsetospeed(&options, B115200) || cfsetispeed(&options, B115200)) {
 		print("%s - set baudrate failed, errno = %d", __func__, errno);
