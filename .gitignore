@@ -1,3 +1,7 @@
+# normal rules
 *.o
 *.sh
-app_burn
+factory_burn
+
+# cscope
+cscope*

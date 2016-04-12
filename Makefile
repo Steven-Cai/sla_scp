@@ -1,7 +1,9 @@
-#CC = gcc
-CC = ${CROSS_COMPILE}gcc
+CFLAGS = -DDEBUG
 
-TARGET = app_burn
+#CC = gcc
+CC = ${CROSS_COMPILE}gcc $(CFLAGS)
+
+TARGET = factory_burn
 OBJS = main.o serial.o scp.o utiles.o
 
 $(TARGET) : $(OBJS)

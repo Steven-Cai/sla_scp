@@ -5,6 +5,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
+
+#include "utiles.h"
 
 void print(const char *fmt, ...)
 {
@@ -74,4 +77,29 @@ void small_endian_2_big_endian(void *data)
 	for (i = 0; i < 4; i ++) {
 		*(index + i) = tmp[4 - i - 1];
 	}
+}
+
+int reset_secure_processor(char *gpio_num)
+{
+	char gpio_path[GPIO_PATH_MAX_SIZE] = {0};
+	int fd, ret;
+
+	snprintf(gpio_path, sizeof(gpio_path), "%s/gpio%s/value\0", GPIO_PREFIX_PATH, gpio_num);
+	print("gpio_path: %s\n", gpio_path);
+	scanf("%s", gpio_path);
+	return 0;
+	fd = open(gpio_path, O_RDWR | O_NOCTTY | O_NDELAY);
+	if (fd < 0) {
+		print("%s - open device failed, errno = %d", __func__, errno);
+		return -1;
+	}
+	ret = write(fd, 0, 1);
+	if (ret != 1) {
+		print("%s - write failed\n", __func__);
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	return 0;
 }

@@ -63,6 +63,11 @@ static int serial_open(const char *device_name)
 	return fd;
 }
 
+int serial_close(int fd)
+{
+	close(fd);
+}
+
 int serial_send(int fd, void *data, int data_len)
 {
 	int len = 0;

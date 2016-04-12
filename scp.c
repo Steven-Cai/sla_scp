@@ -199,7 +199,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 		// dispatch packet
 		if (strstr(packet_name, SCP_PACKET_BL_EMULATION_MODE)) {
 			// BL mode
+#ifdef DEBUG
 			print("wait < %s", packet_path);
+#endif
 			memset((void *)&bl_cmd_hdr, 0, sizeof(struct scp_cmd_hdr));
 			memset((void *)&packet_cmd_hdr, 0, sizeof(struct scp_cmd_hdr));
 			retry_times = SCP_PACKET_SEND_RETRY_TIMES;
@@ -224,7 +226,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 					if (!memcmp(bl_buf, packet_buf, packet_len)) {
 						free(packet_buf);
 						packet_buf = NULL;
+#ifdef DEBUG
 						print("bl packet is identical with the packet from MAX32550\n");
+#endif
 						break;
 					} else {
 						free(packet_buf);
@@ -255,7 +259,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 			}
 		} else {
 			// host mode
+#ifdef DEBUG
 			print("send > %s", packet_path);
+#endif
 			retry_times = SCP_PACKET_SEND_RETRY_TIMES;
 			while (retry_times) {
 				retry_times --;
@@ -271,7 +277,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 				memcpy(packet_buf_pre, packet_buf, packet_len);
 				free(packet_buf);
 				packet_buf = NULL;
+#ifdef DEBUG
 				print("%s - packet(%s) sends successed\n", __func__, packet_name);
+#endif
 				break;
 			}
 			if (retry_times == 0) {
@@ -282,6 +290,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 		}
 	}
 	print("SCP session success");
+	ret = 0;
 
 error_2:
 	if (packet_buf)
@@ -296,9 +305,9 @@ error_1:
 	return ret;
 }
 
-int scp_burn(const char *device_name, const char *packet_dir)
+int scp_send(const char *device_name, const char *packet_dir)
 {
-	int serial_fd;
+	int serial_fd, ret;
 
 	serial_fd = serial_init(device_name);
 	if (serial_fd < 0) {
@@ -306,5 +315,9 @@ int scp_burn(const char *device_name, const char *packet_dir)
 		return -1;
 	}
 
-	return scp_update(serial_fd, packet_dir);
+	ret = scp_update(serial_fd, packet_dir);
+
+	serial_close(serial_fd);
+
+	return ret;
 }
