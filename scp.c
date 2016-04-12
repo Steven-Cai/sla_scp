@@ -171,7 +171,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 	struct scp_cmd_hdr bl_cmd_hdr;
 	struct scp_cmd_hdr packet_cmd_hdr;
 
-	print("Start SCP session");
+	print("Start to send SCP session...");
 	fp = packet_list_open(packet_dir);
 	if (!fp) {
 		print("%s - open packet.list failed, giveup", __func__);
