@@ -16,7 +16,7 @@
 #define SCP_PACKET_LIST_NAME "packet.list"
 #define SCP_PACKET_BL_EMULATION_MODE "bl"
 #define SCP_PACKET_HOST_MODE "host"
-#define SCP_PACKET_SEND_RETRY_TIMES 15
+#define SCP_PACKET_SEND_RETRY_TIMES 30
 #define SCP_PACKET_READ_TIMES 3
 #define SCP_PACKET_TIMEOUT 2
 #define SCP_PACKET_CMD_SIZE 8
@@ -153,6 +153,20 @@ int scp_packet_receive(int fd, char *buf, int expect_size)
 	return size;
 }
 
+int get_real_packet_name(char *packet_name, int len)
+{
+	int i = len - 1;
+
+	while (1) {
+		if (packet_name[i - 5] == 'p'&& packet_name[i - 4] == 'a' && packet_name[i - 3] == 'c' &&
+		    packet_name[i - 2] == 'k' && packet_name[i - 1] == 'e' && packet_name[i] == 't') {
+			packet_name[i + 1] = '\0';
+			break;
+		} else
+			i --;
+	}
+}
+
 int scp_update(int serial_fd, const char *packet_dir)
 {
 	FILE *fp;
@@ -180,7 +194,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 
 	while ((len = getline(&packet_name, &size, fp)) != -1) {
 		// packet_name need to be free manually
-		packet_name[len - 1] = '\0'; //remove '\n'
+		get_real_packet_name(packet_name, len);
 		snprintf(packet_path, sizeof(packet_path), "%s%s", packet_dir, packet_name);
 		retry_times = SCP_PACKET_READ_TIMES; // 3
 		// read packet file form buildapp in the local directory

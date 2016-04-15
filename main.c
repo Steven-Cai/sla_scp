@@ -34,7 +34,8 @@ int main(int argc, void *argv[])
 		break;
 	default:
 		usage(argv[0]);
-		return -EINVAL;
+		ret = -1;
+		goto end;
 	}
 
 	/* burn CRK */
@@ -42,14 +43,16 @@ int main(int argc, void *argv[])
 		ret = reset_secure_processor(gpio_num);
 		if (ret) {
 			print("%s - reset secure processor failed", __func__);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 
 		/* burn crk */
 		ret = scp_send(device_name, key_dir);
 		if (ret) {
 			print("%s: %s - scp send failed(%s)", argv[0], __func__, key_dir);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 		print("%s - burn CRK successfully", __func__);
 	}
@@ -59,32 +62,37 @@ int main(int argc, void *argv[])
 		ret = reset_secure_processor(gpio_num);
 		if (ret) {
 			print("%s - reset secure processor failed", __func__);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 
 		ret = scp_send(device_name, secure_dir);
 		if (ret) {
 			print("%s: %s - scp send failed(%s)", argv[0], __func__, secure_dir);
-			return -1;
+			ret = -1;
+			goto end;
 		}
 		print("%s - secure application update successfully", __func__);
 
-		sleep(10);
+		sleep(3);
 	}
 
 	/* burn product application */
 	ret = reset_secure_processor(gpio_num);
 	if (ret) {
 		print("%s - reset secure processor failed", __func__);
-		return -1;
+		ret = -1;
+		goto end;
 	}
 
 	ret = scp_send(device_name, product_dir);
 	if (ret) {
 		print("%s: %s - scp send failed", argv[0], __func__, product_dir);
-		return -1;
+		ret = -1;
+		goto end;
 	}
 	print("%s - product application update successfully", __func__);
 
-	return 0;
+end:
+	show_notify(device_name, ret);
 }

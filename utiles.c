@@ -79,6 +79,33 @@ void small_endian_2_big_endian(void *data)
 	}
 }
 
+void show_notify(char *device_name, int success)
+{
+	int fd;
+	char on = 0xff;
+	char off = 0x0;
+	int off_long_time[5000] = {0};
+
+	fd = open(device_name, O_RDWR | O_NOCTTY | O_NDELAY);
+	if (fd < 0) {
+		print("%s - open device failed, errno = %d", __func__, errno);
+		return;
+	}
+	if (success) {
+		/* fail */
+		while(1) {
+			write(fd, &off, 1);
+		}
+	} else {
+		/* success */
+		while(1) {
+			write(fd, off_long_time, sizeof(off_long_time));
+			sleep(2);
+		}
+	}
+	close(fd);
+}
+
 int reset_secure_processor(char *gpio_num)
 {
 	char gpio_path[GPIO_PATH_MAX_SIZE] = {0};
@@ -86,16 +113,21 @@ int reset_secure_processor(char *gpio_num)
 
 	snprintf(gpio_path, sizeof(gpio_path), "%s/gpio%s/value\0", GPIO_PREFIX_PATH, gpio_num);
 	print("gpio_path: %s\n", gpio_path);
-	scanf("%s", gpio_path);
-	return 0;
 	fd = open(gpio_path, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (fd < 0) {
 		print("%s - open device failed, errno = %d", __func__, errno);
 		return -1;
 	}
-	ret = write(fd, 0, 1);
+	ret = write(fd, "0", 1);
 	if (ret != 1) {
-		print("%s - write failed\n", __func__);
+		print("%s - failed to pull down gpio, ret = %d, errno = %d\n", __func__, ret, errno);
+		close(fd);
+		return -1;
+	}
+	sleep(1);
+	ret = write(fd, "1", 1);
+	if (ret != 1) {
+		print("%s - failed to pull up gpio, ret = %d, errno = %d\n", __func__, ret, errno);
 		close(fd);
 		return -1;
 	}
