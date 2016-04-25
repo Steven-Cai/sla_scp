@@ -50,6 +50,35 @@ void print(const char *fmt, ...)
 	return;
 }
 
+void display_progress_bar(double progress)
+{
+	double size = 100.0 / PROGRESS_BAR_SIZE;
+	int i;
+	double count;
+	double percent;
+
+	percent = progress * 100.0;
+	if (percent < 0.0 || percent > 100.0) {
+		printf("LC: %s - invalide argument, percent = %f\n", __func__, percent);
+		return;
+	}
+	for (count = 0.0; count < PROGRESS_BAR_SIZE; count ++) {
+		if (percent <= count * size)
+			break;
+	}
+	printf("\r["); /* move the cursor to the beginning of the line */
+	for (i = 0; i < PROGRESS_BAR_SIZE; i ++) {
+		if (i <  count)
+			printf("%s", PROGRESS_BAR_CONTENT);
+		else
+			printf("%s", " ");
+	}
+	printf("] %.2f%%", count * size);
+	fflush(stdout);
+	/* if (count == PROGRESS_BAR_SIZE) */
+	/* 	putchar('\n'); */
+}
+
 /* return */
 /* 1: big endian */
 /* 0: small endian */
@@ -79,7 +108,7 @@ void small_endian_2_big_endian(void *data)
 	}
 }
 
-void show_notify(char *device_name, int success)
+void show_notify(char *device_name, int status)
 {
 	int fd;
 	char on = 0xff;
@@ -91,7 +120,7 @@ void show_notify(char *device_name, int success)
 		print("%s - open device failed, errno = %d", __func__, errno);
 		return;
 	}
-	if (success) {
+	if (status) {
 		/* fail */
 		while(1) {
 			write(fd, &off, 1);
@@ -106,13 +135,34 @@ void show_notify(char *device_name, int success)
 	close(fd);
 }
 
+int shut_down_processor(char *gpio_num)
+{
+	char gpio_path[GPIO_PATH_MAX_SIZE] = {0};
+	int fd, ret;
+
+	snprintf(gpio_path, sizeof(gpio_path), "%s/gpio%s/value\0", GPIO_PREFIX_PATH, gpio_num);
+	fd = open(gpio_path, O_RDWR | O_NOCTTY | O_NDELAY);
+	if (fd < 0) {
+		print("%s - open device failed, errno = %d", __func__, errno);
+		return -1;
+	}
+	ret = write(fd, "0", 1);
+	if (ret != 1) {
+		print("%s - failed to pull down gpio, ret = %d, errno = %d\n", __func__, ret, errno);
+		close(fd);
+		return -1;
+	}
+	close(fd);
+
+	return 0;
+}
+
 int reset_secure_processor(char *gpio_num)
 {
 	char gpio_path[GPIO_PATH_MAX_SIZE] = {0};
 	int fd, ret;
 
 	snprintf(gpio_path, sizeof(gpio_path), "%s/gpio%s/value\0", GPIO_PREFIX_PATH, gpio_num);
-	print("gpio_path: %s\n", gpio_path);
 	fd = open(gpio_path, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (fd < 0) {
 		print("%s - open device failed, errno = %d", __func__, errno);

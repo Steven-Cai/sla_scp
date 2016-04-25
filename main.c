@@ -92,7 +92,14 @@ int main(int argc, void *argv[])
 		goto end;
 	}
 	print("%s - product application update successfully", __func__);
+	ret = shut_down_processor(gpio_num);
+	if (ret)
+		print("Failed to shut down secure processor. Please reburn later.\n");
+	else
+		print("Burn successfully. Please shut dowm.\n");
 
 end:
 	show_notify(device_name, ret);
+
+	return 0;
 }

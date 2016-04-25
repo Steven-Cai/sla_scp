@@ -107,7 +107,9 @@ int serial_receive(int fd, char *data, int datalen)
 		print("%s - select failed. errno = %d", __func__, errno);
 		return -1;
 	} else if (ret == 0) {
+#ifdef DEBUG
 		print("%s - select timeout", __func__);
+#endif
 		return -2;
 	}
 

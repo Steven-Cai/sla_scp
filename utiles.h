@@ -8,4 +8,7 @@ void print(const char *fmt, ...);
 #define GPIO_PATH_MAX_SIZE 1024
 #define GPIO_PREFIX_PATH "/sys/class/gpio"
 
+#define PROGRESS_BAR_SIZE 60
+#define PROGRESS_BAR_CONTENT "="
+
 #endif

@@ -31,24 +31,16 @@ struct scp_cmd_hdr {
 	unsigned char cks;
 };
 
-FILE *packet_list_open(const char *packet_dir)
+FILE *packet_list_open(const char *packet_list_path)
 {
 	FILE *fp = NULL;
-	int dir_len = strlen(packet_dir);
-	char *packet_list = SCP_PACKET_LIST_NAME;
-	int list_len = strlen(packet_list);
-	int max_path_size = dir_len + list_len + 1;
-	char *packet_path = calloc(1, max_path_size);
 
-	snprintf(packet_path, max_path_size, "%s%s", packet_dir, packet_list);
-	print("%s - packet_path: %s", __func__, packet_path);
-	fp = fopen(packet_path, "r");
+	print("%s - packet_list_path: %s", __func__, packet_list_path);
+	fp = fopen(packet_list_path, "r");
 	if (!fp) {
-		print("%s - fopen(%s) failed, errno = %d", __func__, packet_path, errno);
-		free(packet_path);
+		print("%s - fopen(%s) failed, errno = %d", __func__, packet_list_path, errno);
 		return fp;
 	}
-	free(packet_path);
 
 	return fp;
 }
@@ -135,7 +127,9 @@ int scp_packet_receive(int fd, char *buf, int expect_size)
 	while (size != expect_size) {
 		ret = serial_receive(fd, index, expect_size - size);
 		if (ret < 0) {
+#ifdef DEBUG
 			print("%s - serial_receive failed, return = %d", __func__, ret);
+#endif
 			return ret;
 		}
 		size += ret;
@@ -151,6 +145,23 @@ int scp_packet_receive(int fd, char *buf, int expect_size)
 	}
 
 	return size;
+}
+
+int get_number_of_line(const char *file_name)
+{
+	FILE *fp = fopen(file_name, "r");
+	int ch;
+	int count = 0;
+
+	print("%s - file_name: %s\n", __func__, file_name);
+	do {
+		ch = fgetc(fp);
+		if( ch == '\n')
+			count++;
+	} while( ch != EOF );
+	fclose(fp);
+
+	return count;
 }
 
 int get_real_packet_name(char *packet_name, int len)
@@ -179,14 +190,19 @@ int scp_update(int serial_fd, const char *packet_dir)
 	char bl_buf[SCP_PACKET_BUF_MAX_SIZE];
 	int packet_len, packet_len_pre;
 	int retry_times;
-	int ret = 0;
+	int ret = 0, i;
 	char *tmp;
-	int i;
 	struct scp_cmd_hdr bl_cmd_hdr;
 	struct scp_cmd_hdr packet_cmd_hdr;
+	char *packet_list_path = calloc(1, SCP_PACKET_PATH_MAX_SIZE);
+	char *packet_list_name = SCP_PACKET_LIST_NAME;
+	double progress, all_line, line;
 
+	snprintf(packet_list_path, SCP_PACKET_PATH_MAX_SIZE, "%s%s", packet_dir, packet_list_name);
+	line = 0.0;
+	all_line = get_number_of_line(packet_list_path);
 	print("Start to send SCP session...");
-	fp = packet_list_open(packet_dir);
+	fp = packet_list_open(packet_list_path);
 	if (!fp) {
 		print("%s - open packet.list failed, giveup", __func__);
 		return -1;
@@ -194,6 +210,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 
 	while ((len = getline(&packet_name, &size, fp)) != -1) {
 		// packet_name need to be free manually
+		line ++;
 		get_real_packet_name(packet_name, len);
 		snprintf(packet_path, sizeof(packet_path), "%s%s", packet_dir, packet_name);
 		retry_times = SCP_PACKET_READ_TIMES; // 3
@@ -228,7 +245,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 					if (serial_send(serial_fd, packet_buf_pre, packet_len_pre) != packet_len_pre)
 						print("%s - serial resend previous packet(%s) failed", __func__, packet_name);
 					else
+#ifdef DEBUG
 						print("%s - serial resend previous packet(%s)", __func__, packet_name);
+#endif
 					continue;
 				} else if (ret < 0) {
 					print("%s - scp_packet_receive error, ret = %d", __func__, ret);
@@ -242,21 +261,28 @@ int scp_update(int serial_fd, const char *packet_dir)
 						packet_buf = NULL;
 #ifdef DEBUG
 						print("bl packet is identical with the packet from MAX32550\n");
+#else
+						progress = (double)line / (double)all_line;
+						display_progress_bar(progress);
 #endif
 						break;
 					} else {
 						free(packet_buf);
 						packet_buf = NULL;
-						print("bl packet is different with the packet from MAX32550\n");
+#ifdef DEBUG
+						print("bl packet is different with the packet from MAX32550");
+#endif
 						scp_parse_cmd_hdr(&bl_cmd_hdr, bl_buf);
 						if (bl_cmd_hdr.dl) {
 							//BootloaderScp.py: 178
 							ret = serial_receive(serial_fd, bl_buf, sizeof(bl_buf));
 							if (ret > 0)
-								print("%s - bl_cmd_hdr->dl  = %d, ret = %d\n", __func__, bl_cmd_hdr.dl, ret);
+								print("%s - bl_cmd_hdr->dl  = %d, ret = %d", __func__, bl_cmd_hdr.dl, ret);
 						}
 						if (!memcmp(&packet_cmd_hdr, &bl_cmd_hdr, sizeof(struct scp_cmd_hdr))) {
+#ifdef DEBUG
 							print("packet_cmd_hdr and bl_cmd_hdr have the same cmd_hdr, although the data is different, PASS");
+#endif
 							break;
 						} else {
 							print("%s - error bl packet, giveup", __func__);
@@ -293,6 +319,9 @@ int scp_update(int serial_fd, const char *packet_dir)
 				packet_buf = NULL;
 #ifdef DEBUG
 				print("%s - packet(%s) sends successed\n", __func__, packet_name);
+#else
+				progress = (double)line / (double)all_line;
+				display_progress_bar(progress);
 #endif
 				break;
 			}
@@ -303,7 +332,7 @@ int scp_update(int serial_fd, const char *packet_dir)
 			}
 		}
 	}
-	print("SCP session success");
+	print("\n\nSCP session success");
 	ret = 0;
 
 error_2:
@@ -315,6 +344,7 @@ error_1:
 	if (packet_name)
 		free(packet_name);
 	packet_list_close(fp);
+	free(packet_list_path);
 
 	return ret;
 }

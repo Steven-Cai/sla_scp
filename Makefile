@@ -1,4 +1,4 @@
-CFLAGS = -DDEBUG
+CFLAGS = #-DDEBUG
 
 #CC = gcc
 CC = ${CROSS_COMPILE}gcc $(CFLAGS)
